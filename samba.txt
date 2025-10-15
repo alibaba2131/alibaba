@@ -1,8 +1,4 @@
-#!/bin/bash
-# =================================================
-# TYBSc CS Practical - Samba Share Setup
-# Author: Augustine (Clean & Dynamic Version)
-# =================================================
+
 set -euo pipefail
 
 # --- Colors and prompt ---
