@@ -1,0 +1,89 @@
+#!/bin/bash
+# =================================================
+# TYBSc CS Practical - Samba Share Setup
+# Author: Augustine (Clean & Dynamic Version)
+# =================================================
+set -euo pipefail
+
+# --- Colors and prompt ---
+GREEN="\e[1;32m"
+BLUE="\e[1;34m"
+RESET="\e[0m"
+HOSTNAME=$(hostname)
+IP_ADDR=$(hostname -I | awk '{print $1}')
+PROMPT="${GREEN}ubuntu@$HOSTNAME${RESET}:${BLUE}~${RESET}\$"
+
+# --- Helper function ---
+type_command() {
+    local text="$1"
+    echo -e "${PROMPT} $text"
+    sleep 1
+}
+
+clear
+echo -e "${GREEN}===== SAMBA SHARE SETUP SCRIPT =====${RESET}\n"
+
+# Step 1: Update system
+type_command "sudo apt update -y"
+sudo apt update -y
+
+# Step 2: Install Samba
+type_command "sudo apt install samba -y"
+sudo apt install samba -y
+
+# Step 3: Create Samba directory
+SHARE_DIR="/srv/samba/share_dinkar"
+type_command "sudo mkdir -p $SHARE_DIR"
+sudo mkdir -p "$SHARE_DIR"
+
+# Step 4: Set directory permissions
+type_command "sudo chmod -R 777 $SHARE_DIR"
+sudo chmod -R 777 "$SHARE_DIR"
+
+# Step 5: Backup smb.conf
+SMB_CONF="/etc/samba/smb.conf"
+type_command "sudo cp $SMB_CONF ${SMB_CONF}.backup"
+sudo cp "$SMB_CONF" "${SMB_CONF}.backup"
+
+# Step 6: Add Samba share configuration
+type_command "Adding Samba share configuration..."
+sudo bash -c "cat <<EOF >> $SMB_CONF
+
+[share_dinkar]
+   comment = My Ubuntu Share by Augustine
+   path = $SHARE_DIR
+   read only = no
+   guest ok = yes
+   writable = yes
+   create mask = 0775
+   directory mask = 0775
+EOF"
+
+# Step 7: Restart Samba services
+type_command "sudo systemctl restart smbd nmbd"
+sudo systemctl restart smbd nmbd
+
+# Step 8: Enable Samba services at boot
+type_command "sudo systemctl enable smbd nmbd"
+sudo systemctl enable smbd nmbd
+
+# Step 9: Display Samba service status
+type_command "sudo systemctl status smbd --no-pager"
+sudo systemctl status smbd --no-pager | head -n 10
+
+# Step 10: Show IP address for access
+type_command "Your Ubuntu machine IP address is $IP_ADDR"
+echo -e "${GREEN}Access the share from Windows using: \\\\$IP_ADDR\\share_dinkar${RESET}"
+
+# Step 11: Optional Firewall Handling
+if command -v ufw >/dev/null 2>&1; then
+    type_command "Disabling UFW Firewall (optional for demo)"
+    sudo ufw disable
+else
+    type_command "UFW firewall not installed — skipping"
+fi
+
+# Step 12: Completion message
+echo -e "\n${GREEN}✅ Samba setup completed successfully!${RESET}"
+echo -e "${GREEN}Directory: $SHARE_DIR${RESET}"
+echo -e "${GREEN}Script by Augustine 🚀${RESET}"
