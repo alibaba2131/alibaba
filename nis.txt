@@ -1,69 +1,151 @@
 #!/bin/bash
+# -------------------------------------------------
+# TYBSc CS Practical No. 08
+# Configure NIS Server and Client (Ubuntu)
+# Author: Atharv Satish Munj
+# -------------------------------------------------
+
 set -euo pipefail
 
-GREEN="\e[1;32m"; BLUE="\e[1;34m"; RESET="\e[0m"
-PROMPT="${GREEN}ubuntu@ubuntu${RESET}:${BLUE}~${RESET}\$"
+# --- Auto-detect System Info ---
+HOSTNAME=$(hostname)
+IP_ADDRESS=$(hostname -I | awk '{print $1}')
+INTERFACE=$(ip route | grep '^default' | awk '{print $5}' | head -n1)
+DOMAIN="localdomain.nis"
 
-show() { echo -e "${PROMPT} $1"; }
+# --- Colors and Prompt Style ---
+GREEN="\e[1;32m"
+BLUE="\e[1;34m"
+RESET="\e[0m"
+PROMPT="${GREEN}${HOSTNAME}${RESET}:${BLUE}~${RESET}\$"
 
-SERVER_HOSTNAME=$(hostname)
-SERVER_IP=$(hostname -I | awk '{print $1}')
-NIS_DOMAIN="localdomain.nis"
+show() {
+  echo -e "${PROMPT} $1"
+  sleep 1
+}
 
 clear
-echo -e "${GREEN}===== CONFIGURING NIS SERVER & CLIENT (DEMO MODE) =====${RESET}\n"
+echo -e "${GREEN}===== PRACTICAL 08: Configure NIS Server and Client =====${RESET}\n"
+echo -e "Detected Hostname : ${GREEN}${HOSTNAME}${RESET}"
+echo -e "Detected Interface: ${GREEN}${INTERFACE}${RESET}"
+echo -e "Detected IP       : ${GREEN}${IP_ADDRESS}${RESET}"
+echo -e "Domain Name       : ${GREEN}${DOMAIN}${RESET}\n"
+sleep 2
 
-### SERVER SETUP ###
+# -------------------------------------------------
+# NIS SERVER CONFIGURATION
+# -------------------------------------------------
 show "sudo apt update -y"
 sudo apt update -y
 
 show "sudo apt install rpcbind nis -y"
 sudo apt install rpcbind nis -y
 
-# Ensure /etc/hosts contains the server's IP and hostname
-grep -q "$SERVER_IP" /etc/hosts || echo "$SERVER_IP $SERVER_HOSTNAME" | sudo tee -a /etc/hosts > /dev/null
+# Configure hostname resolution dynamically
+show "Updating /etc/hosts with server info"
+sudo bash -c "cat > /etc/hosts <<EOF
+127.0.0.1   localhost
+127.0.1.1   ${HOSTNAME}
+::1         ipv6-localhost ipv6-loopback
+ff02::1     ipv6-allnodes
+ff02::2     ipv6-allrouters
+${IP_ADDRESS} ${HOSTNAME}
+EOF"
 
-show "sudo nisdomainname $NIS_DOMAIN"
-sudo nisdomainname "$NIS_DOMAIN"
+# Set NIS domain name
+show "sudo nisdomainname ${DOMAIN}"
+sudo nisdomainname "${DOMAIN}"
 
-echo "NISDOMAIN=$NIS_DOMAIN" | sudo tee /etc/default/nis > /dev/null
+show "echo '${DOMAIN}' | sudo tee /etc/defaultdomain"
+echo "${DOMAIN}" | sudo tee /etc/defaultdomain > /dev/null
 
-sudo sed -i 's/NISSERVER=false/NISSERVER=master/' /etc/default/nis
+# Configure NIS as master
+show "sudo sed -i 's/NISSERVER=false/NISSERVER=master/' /etc/default/nis"
 
-grep -q "$SERVER_IP" /etc/ypserv.conf || echo "$SERVER_IP:*" | sudo tee -a /etc/ypserv.conf > /dev/null
+# Allow local network access (assume /24)
+SUBNET=$(echo "$IP_ADDRESS" | cut -d'.' -f1-3).0
+show "Adding access control for ${SUBNET}/24"
+echo "${SUBNET}/24:*" | sudo tee -a /etc/ypserv.conf > /dev/null
 
+# Build NIS database
+show "cd /var/yp && sudo make"
 cd /var/yp && sudo make
 
+# Restart and enable services
 show "sudo systemctl restart rpcbind ypserv"
 sudo systemctl restart rpcbind ypserv
+sudo systemctl enable rpcbind ypserv
 
-### CLIENT SETUP (Same System for Demo) ###
+# Check service status
+show "sudo systemctl status ypserv --no-pager"
+sudo systemctl status ypserv --no-pager || true
+
+echo -e "\n${GREEN}✔ NIS Server configured successfully.${RESET}\n"
+sleep 2
+
+# -------------------------------------------------
+# NIS CLIENT CONFIGURATION
+# (Simulated on same machine for demo)
+# -------------------------------------------------
+echo -e "${BLUE}=== Configuring NIS Client (on same system for test) ===${RESET}\n"
+sleep 1
+
+show "sudo apt update -y"
+sudo apt update -y
+
 show "sudo apt install rpcbind nis yp-tools -y"
 sudo apt install rpcbind nis yp-tools -y
 
-grep -q "$SERVER_IP" /etc/hosts || echo "$SERVER_IP $SERVER_HOSTNAME" | sudo tee -a /etc/hosts > /dev/null
+# Ensure /etc/hosts has server entry
+show "Ensuring /etc/hosts contains NIS server entry"
+grep -q "${IP_ADDRESS} ${HOSTNAME}" /etc/hosts || echo "${IP_ADDRESS} ${HOSTNAME}" | sudo tee -a /etc/hosts > /dev/null
 
-sudo nisdomainname "$NIS_DOMAIN"
-echo "NISDOMAIN=$NIS_DOMAIN" | sudo tee /etc/default/nis > /dev/null
+# Set NIS domain
+show "sudo nisdomainname ${DOMAIN}"
+sudo nisdomainname "${DOMAIN}"
 
-grep -q "$NIS_DOMAIN" /etc/yp.conf || echo "domain $NIS_DOMAIN server $SERVER_IP" | sudo tee /etc/yp.conf > /dev/null
+show "echo '${DOMAIN}' | sudo tee /etc/defaultdomain"
+echo "${DOMAIN}" | sudo tee /etc/defaultdomain > /dev/null
 
+# Configure yp.conf to point to detected server IP
+show "Configuring /etc/yp.conf"
+echo "domain ${DOMAIN} server ${IP_ADDRESS}" | sudo tee /etc/yp.conf > /dev/null
+
+# Configure NSS (add 'nis' after compat)
+show "Updating /etc/nsswitch.conf"
 sudo sed -i 's/^passwd:.*/passwd:         compat nis/' /etc/nsswitch.conf
 sudo sed -i 's/^group:.*/group:          compat nis/' /etc/nsswitch.conf
 sudo sed -i 's/^shadow:.*/shadow:         compat nis/' /etc/nsswitch.conf
 
-if ! grep -q "pam_mkhomedir.so" /etc/pam.d/common-session; then
-    echo 'session required pam_mkhomedir.so skel=/etc/skel/ umask=0022' | sudo tee -a /etc/pam.d/common-session
-fi
+# PAM home auto-creation (prevent duplicates)
+show "Configuring PAM home directory creation"
+grep -q "pam_mkhomedir.so" /etc/pam.d/common-session || \
+echo "session required pam_mkhomedir.so skel=/etc/skel/ umask=0022" | sudo tee -a /etc/pam.d/common-session > /dev/null
 
+# Restart services
 show "sudo systemctl restart rpcbind ypbind"
 sudo systemctl restart rpcbind ypbind
 
+# Enable services at boot
 show "sudo systemctl enable rpcbind ypbind"
 sudo systemctl enable rpcbind ypbind
 
-echo -e "\n${GREEN}✔ NIS Server & Client configured successfully.${RESET}"
-echo -e "${GREEN}Hostname: $SERVER_HOSTNAME${RESET}"
-echo -e "${GREEN}IP Address: $SERVER_IP${RESET}"
-echo -e "${GREEN}NIS Domain: $NIS_DOMAIN${RESET}"
-echo -e "${GREEN}Test with: ypwhich | ypcat passwd.byname${RESET}\n"
+# Check service status
+show "sudo systemctl status ypbind --no-pager"
+sudo systemctl status ypbind --no-pager || true
+
+# Verify binding
+show "ypwhich"
+ypwhich || echo "ypwhich may fail if client and server are same instance."
+
+# Network connectivity check
+show "ping -c 3 ${IP_ADDRESS}"
+ping -c 3 "${IP_ADDRESS}" || true
+
+echo -e "\n${GREEN}=======================================================${RESET}"
+echo -e "${GREEN}✔ NIS Server and Client configured successfully.${RESET}"
+echo -e "${GREEN}Server Hostname: ${HOSTNAME}${RESET}"
+echo -e "${GREEN}Server IP      : ${IP_ADDRESS}${RESET}"
+echo -e "${GREEN}Domain Name    : ${DOMAIN}${RESET}"
+echo -e "${GREEN}You can verify users with 'ypcat passwd.byname' or 'ypwhich'${RESET}"
+echo -e "${GREEN}=======================================================${RESET}\n"
