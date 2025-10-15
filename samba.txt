@@ -1,7 +1,7 @@
-
+#!/bin/bash
 set -euo pipefail
 
-# --- Colors and prompt ---
+# --- Colors & prompt ---
 GREEN="\e[1;32m"
 BLUE="\e[1;34m"
 RESET="\e[0m"
@@ -38,8 +38,10 @@ sudo chmod -R 777 "$SHARE_DIR"
 
 # Step 5: Backup smb.conf
 SMB_CONF="/etc/samba/smb.conf"
-type_command "sudo cp $SMB_CONF ${SMB_CONF}.backup"
-sudo cp "$SMB_CONF" "${SMB_CONF}.backup"
+if [ -f "$SMB_CONF" ]; then
+    type_command "Backing up $SMB_CONF to ${SMB_CONF}.backup"
+    sudo cp "$SMB_CONF" "${SMB_CONF}.backup"
+fi
 
 # Step 6: Add Samba share configuration
 type_command "Adding Samba share configuration..."
@@ -73,8 +75,9 @@ echo -e "${GREEN}Access the share from Windows using: \\\\$IP_ADDR\\share_dinkar
 
 # Step 11: Optional Firewall Handling
 if command -v ufw >/dev/null 2>&1; then
-    type_command "Disabling UFW Firewall (optional for demo)"
-    sudo ufw disable
+    type_command "Allowing Samba through UFW firewall"
+    sudo ufw allow 'Samba'
+    sudo ufw reload
 else
     type_command "UFW firewall not installed — skipping"
 fi
