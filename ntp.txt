@@ -1,10 +1,4 @@
-#!/bin/bash
-# -------------------------------------------------
-# TYBSc CS Practical No.04
-# Configure NTP Server (NTPd)
-# Fully automatic with dynamic subnet detection
-# Author: Atharv Satish Munj
-# -------------------------------------------------
+
 
 set -euo pipefail
 
@@ -114,3 +108,4 @@ echo -e "${GREEN}Subnet   : ${SUBNET}/24${RESET}"
 echo -e "${GREEN}Service  : NTP (ntpd) running and enabled at boot${RESET}"
 echo -e "${GREEN}Firewall : NTP port allowed (if ufw active)${RESET}"
 echo -e "${GREEN}======================================================${RESET}\n"
+
