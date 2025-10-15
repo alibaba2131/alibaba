@@ -1,9 +1,4 @@
-#!/bin/bash
-# -------------------------------------------------
-# TYBSc CS Practical No. 08
-# Configure NIS Server and Client (Ubuntu)
-# Author: Atharv Satish Munj
-# -------------------------------------------------
+
 
 set -euo pipefail
 
@@ -149,3 +144,4 @@ echo -e "${GREEN}Server IP      : ${IP_ADDRESS}${RESET}"
 echo -e "${GREEN}Domain Name    : ${DOMAIN}${RESET}"
 echo -e "${GREEN}You can verify users with 'ypcat passwd.byname' or 'ypwhich'${RESET}"
 echo -e "${GREEN}=======================================================${RESET}\n"
+
