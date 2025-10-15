@@ -1,7 +1,4 @@
-#!/bin/bash
-# TYBSc CS Practical 01 - Install and Configure DHCP Server in Ubuntu 16.04+
-# Author: Atharv Satish Munj
-# Description: Fully automatic DHCP setup with real-looking ubuntu@hostname prompt
+
 
 set -euo pipefail
 
@@ -102,3 +99,4 @@ echo "Hostname : $HOSTNAME"
 echo "Interface: $INTERFACE"
 echo "IP Addr  : $IP_ADDRESS"
 echo "Subnet   : $SUBNET"
+
