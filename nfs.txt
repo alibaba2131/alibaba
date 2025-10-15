@@ -1,4 +1,4 @@
-
+#!/bin/bash
 set -euo pipefail
 
 # --- Colors & Prompt ---
@@ -7,13 +7,15 @@ BLUE="\e[1;34m"
 RESET="\e[0m"
 HOSTNAME=$(hostname)
 IP_ADDR=$(hostname -I | awk '{print $1}')
+INTERFACE=$(ip -o -4 route show to default | awk '{print $5}')
+SUBNET=$(ip -o -4 addr show $INTERFACE | awk '{print $4}' | cut -d/ -f1 | awk -F. '{print $1"."$2"."$3".0/24"}')
 PROMPT="${GREEN}ubuntu@$HOSTNAME${RESET}:${BLUE}~${RESET}\$"
 
-# --- NFS Configuration Variables ---
+# --- NFS Config ---
 NFS_SHARE_DIR="/srv/nfs/share"
-NFS_CLIENT_SUBNET="*"  # Change to specific subnet if needed, e.g., 192.168.0.0/24
+NFS_CLIENT_SUBNET="$SUBNET"  # dynamically detected subnet
 
-# --- Helper function for commands ---
+# --- Helper function ---
 run_cmd() {
     echo -e "${PROMPT} $*"
     sleep 1
@@ -25,46 +27,46 @@ run_cmd() {
 clear
 echo -e "${GREEN}===== INSTALL & CONFIGURE NFS SERVER =====${RESET}\n"
 
-# Step 1: Update system
+# Step 1: Update
 run_cmd "sudo apt update -y"
 
 # Step 2: Install NFS server
 run_cmd "sudo apt install nfs-kernel-server -y"
 
-# Step 3: Create NFS share directory
+# Step 3: Create share directory
 run_cmd "sudo mkdir -p $NFS_SHARE_DIR"
 run_cmd "sudo chmod 777 $NFS_SHARE_DIR"
 
-# Step 4: Backup existing exports file
+# Step 4: Backup exports
 run_cmd "sudo cp /etc/exports /etc/exports.backup || true"
 
-# Step 5: Configure NFS exports
+# Step 5: Add export (avoid duplicates)
 if ! grep -q "$NFS_SHARE_DIR" /etc/exports; then
-    echo "$NFS_SHARE_DIR $NFS_CLIENT_SUBNET(rw,sync,no_subtree_check)" | sudo tee -a /etc/exports
+    echo "$NFS_SHARE_DIR $NFS_CLIENT_SUBNET(rw,sync,no_subtree_check,no_root_squash)" | sudo tee -a /etc/exports
 fi
 
 # Step 6: Apply exports
 run_cmd "sudo exportfs -a"
 
-# Step 7: Restart NFS service
+# Step 7: Restart and enable NFS server
 run_cmd "sudo systemctl restart nfs-kernel-server"
 run_cmd "sudo systemctl enable nfs-kernel-server"
 
-# Step 8: Verify NFS shares
+# Step 8: Verify
 run_cmd "sudo exportfs -v"
 
-# Step 9: Optional firewall configuration (UFW)
+# Step 9: Configure firewall properly (if UFW is installed)
 if command -v ufw >/dev/null 2>&1; then
-    run_cmd "sudo ufw allow from any to any port nfs"
-    run_cmd "sudo ufw reload"
-else
-    echo -e "${GREEN}Firewall (ufw) not installed — skipping.${RESET}"
+    echo -e "${GREEN}Configuring UFW for NFS...${RESET}"
+    sudo ufw allow from $NFS_CLIENT_SUBNET to any port nfs
+    sudo ufw allow from $NFS_CLIENT_SUBNET to any port 111
+    sudo ufw reload
 fi
 
-# Step 10: Display share info
+# Step 10: Display info
 echo -e "\n${GREEN}✅ NFS Server setup completed successfully!${RESET}"
 echo -e "${GREEN}Share Directory: $NFS_SHARE_DIR${RESET}"
-echo -e "${GREEN}Accessible to clients on: $NFS_CLIENT_SUBNET${RESET}"
+echo -e "${GREEN}Accessible to clients on subnet: $NFS_CLIENT_SUBNET${RESET}"
 echo -e "${GREEN}Server IP: $IP_ADDR${RESET}"
-echo -e "${GREEN}You can mount the share on a client using:${RESET}"
+echo -e "${GREEN}Mount on client using:${RESET}"
 echo -e "${GREEN}sudo mount $IP_ADDR:$NFS_SHARE_DIR /mount/point${RESET}"
