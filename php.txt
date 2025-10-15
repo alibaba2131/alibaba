@@ -1,0 +1,72 @@
+
+set -euo pipefail
+
+# --- Colors and prompt ---
+GREEN="\e[1;32m"
+BLUE="\e[1;34m"
+RESET="\e[0m"
+HOSTNAME=$(hostname)
+IP_ADDR=$(hostname -I | awk '{print $1}')
+PROMPT="${GREEN}ubuntu@$HOSTNAME${RESET}:${BLUE}~${RESET}\$"
+
+# --- Helper function ---
+type_command() {
+    local text="$1"
+    echo -e "${PROMPT} $text"
+    sleep 1
+}
+
+clear
+echo -e "${GREEN}===== INSTALL MYSQL & PHPMYADMIN =====${RESET}\n"
+
+# Step 1: Update system
+type_command "sudo apt update -y"
+sudo apt update -y
+
+# Step 2: Install MySQL server
+type_command "sudo apt install mysql-server -y"
+sudo apt install mysql-server -y
+
+# Step 3: Secure MySQL installation (optional, interactive)
+type_command "sudo mysql_secure_installation"
+sudo mysql_secure_installation
+
+# Step 4: Check MySQL service status
+type_command "sudo systemctl status mysql --no-pager"
+sudo systemctl status mysql --no-pager | head -n 10
+
+# Step 5: Enable MySQL to start at boot
+type_command "sudo systemctl enable mysql"
+sudo systemctl enable mysql
+
+# Step 6: Install PHP and Apache if not installed
+type_command "sudo apt install apache2 php libapache2-mod-php php-mysql -y"
+sudo apt install apache2 php libapache2-mod-php php-mysql -y
+
+# Step 7: Install phpMyAdmin
+type_command "sudo apt install phpmyadmin -y"
+sudo apt install phpmyadmin -y
+
+# Step 8: Enable phpMyAdmin with Apache
+type_command "Linking phpMyAdmin to Apache webroot"
+if [ ! -f /etc/apache2/conf-available/phpmyadmin.conf ]; then
+    echo "phpMyAdmin configuration file missing! Exiting."
+    exit 1
+fi
+sudo ln -sf /etc/phpmyadmin/apache.conf /etc/apache2/conf-enabled/phpmyadmin.conf
+
+# Step 9: Restart Apache
+type_command "sudo systemctl restart apache2"
+sudo systemctl restart apache2
+
+# Step 10: Firewall configuration (optional)
+if command -v ufw >/dev/null 2>&1; then
+    type_command "Allow Apache (HTTP & HTTPS) through UFW"
+    sudo ufw allow in "Apache Full"
+fi
+
+# Step 11: Display access info
+echo -e "\n${GREEN}✅ MySQL & phpMyAdmin installation completed successfully!${RESET}"
+echo -e "${GREEN}MySQL is running: sudo systemctl status mysql${RESET}"
+echo -e "${GREEN}phpMyAdmin URL: http://$IP_ADDR/phpmyadmin${RESET}"
+echo -e "${GREEN}Login with MySQL root credentials.${RESET}"
