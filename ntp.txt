@@ -1,0 +1,57 @@
+#!/bin/bash
+
+GREEN="\e[32m"
+RESET="\e[0m"
+TYPING_DELAY=0.05
+
+type_command() {
+  local text="$1"
+  for ((i=0; i<${#text}; i++)); do
+    echo -n "${text:$i:1}"
+    sleep $TYPING_DELAY
+  done
+  echo
+}
+
+hostname=$(hostname)
+ip_addr=$(hostname -I | awk '{print $1}')
+interface=$(ip -o -4 route show to default | awk '{print $5}')
+subnet=$(ip -o -4 addr show $interface | awk '{print $4}' | cut -d/ -f1 | awk -F. '{print $1"."$2"."$3".0"}')
+
+# Stop systemd-timesyncd
+type_command -e "${GREEN}$hostname${RESET} sudo systemctl stop systemd-timesyncd"
+sudo systemctl stop systemd-timesyncd
+
+type_command -e "${GREEN}$hostname${RESET} sudo systemctl disable systemd-timesyncd"
+sudo systemctl disable systemd-timesyncd
+
+# Update and install NTP
+type_command -e "${GREEN}$hostname${RESET} sudo apt update -y"
+sudo apt update -y
+
+type_command -e "${GREEN}$hostname${RESET} sudo apt install ntp -y"
+sudo apt install ntp -y
+
+# Configure NTP
+type_command -e "${GREEN}$hostname${RESET} Configuring NTP server..."
+sudo sed -i 's/^pool /#pool /' /etc/ntp.conf
+sudo bash -c "cat >> /etc/ntp.conf" <<EOL
+server 0.ubuntu.pool.ntp.org iburst
+server 1.ubuntu.pool.ntp.org iburst
+server 2.ubuntu.pool.ntp.org iburst
+server 3.ubuntu.pool.ntp.org iburst
+restrict $subnet mask 255.255.255.0 nomodify notrap
+EOL
+
+type_command -e "${GREEN}$hostname${RESET} sudo systemctl restart ntp"
+sudo systemctl restart ntp
+
+type_command -e "${GREEN}$hostname${RESET} sudo systemctl enable ntp"
+sudo systemctl enable ntp
+
+# Set manual date/time
+read -p "Enter new date and time (e.g., '2025-10-15 20:30:00'): " datetime
+type_command -e "${GREEN}$hostname${RESET} sudo date -s '$datetime'"
+sudo date -s "$datetime"
+
+type_command -e "${GREEN}$hostname${RESET} System date and time updated to $(date)"
