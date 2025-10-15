@@ -1,11 +1,24 @@
 #!/bin/bash
 sudo apt update -y
 sudo apt install isc-dhcp-server -y
+interface=$(ip -o -4 route show to default | awk '{print $5}')
 ip_addr=$(hostname -I | awk '{print $1}')
 hostname=$(hostname)
-echo "Server IP Address: $ip_addr"
-echo "Hostname: $hostname"
-sudo sed -i "s/INTERFACESv4=\"\"/INTERFACESv4=\"$(ip -o -4 route show to default | awk '{print $5}')\"/" /etc/default/isc-dhcp-server
+subnet=$(ip -o -4 addr show $interface | awk '{print $4}' | cut -d/ -f1 | awk -F. '{print $1"."$2"."$3".0"}')
+range_start=$(echo $subnet | awk -F. '{print $1"."$2"."$3".10"}')
+range_end=$(echo $subnet | awk -F. '{print $1"."$2"."$3".100"}')
+sudo bash -c "cat > /etc/dhcp/dhcpd.conf" <<EOL
+default-lease-time 600;
+max-lease-time 7200;
+authoritative;
+subnet $subnet netmask 255.255.255.0 {
+    range $range_start $range_end;
+    option routers $ip_addr;
+    option domain-name-servers 8.8.8.8, 8.8.4.4;
+}
+EOL
+sudo sed -i "s/INTERFACESv4=\"\"/INTERFACESv4=\"$interface\"/" /etc/default/isc-dhcp-server
 sudo systemctl restart isc-dhcp-server
 sudo systemctl enable isc-dhcp-server
-echo "DHCP Server installed and running on $hostname with IP $ip_addr"
+echo "$hostname $ip_addr"
+echo "DHCP Server installed and configured on interface $interface with range $range_start - $range_end"
