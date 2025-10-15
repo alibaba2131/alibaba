@@ -1,0 +1,11 @@
+#!/bin/bash
+sudo apt update -y
+sudo apt install isc-dhcp-server -y
+ip_addr=$(hostname -I | awk '{print $1}')
+hostname=$(hostname)
+echo "Server IP Address: $ip_addr"
+echo "Hostname: $hostname"
+sudo sed -i "s/INTERFACESv4=\"\"/INTERFACESv4=\"$(ip -o -4 route show to default | awk '{print $5}')\"/" /etc/default/isc-dhcp-server
+sudo systemctl restart isc-dhcp-server
+sudo systemctl enable isc-dhcp-server
+echo "DHCP Server installed and running on $hostname with IP $ip_addr"
