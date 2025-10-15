@@ -1,47 +1,44 @@
 #!/bin/bash
 set -euo pipefail
 
-# --- Colors and prompt ---
 GREEN="\e[1;32m"
 BLUE="\e[1;34m"
 RESET="\e[0m"
-
 hostname=$(hostname)
 ip_addr=$(hostname -I | awk '{print $1}')
 interface=$(ip -o -4 route show to default | awk '{print $5}')
 subnet=$(ip -o -4 addr show $interface | awk '{print $4}' | cut -d/ -f1 | awk -F. '{print $1"."$2"."$3".0"}')
+rev_zone=$(echo $subnet | awk -F. '{print $3"."$2"."$1}')
 PROMPT="${GREEN}ubuntu@$hostname${RESET}:${BLUE}~${RESET}\$"
 
-# --- Helper function for typing simulation ---
 type_command() {
-    local text="$1"
-    echo -e "${PROMPT} $text"
+    echo -e "${PROMPT} $1"
     sleep 1
 }
 
 clear
 echo -e "${GREEN}===== TYBSc CS Practical 05: Configure DNS Server (BIND9) =====${RESET}\n"
 
-# --- Step 1: Update & install BIND9 ---
+# Update & install
 type_command "sudo apt update -y"
 sudo apt update -y
 type_command "sudo apt install bind9 bind9utils bind9-doc -y"
 sudo apt install bind9 bind9utils bind9-doc -y
 
-# --- Step 2: Backup original files ---
-type_command "Backing up /etc/bind/named.conf.options and named.conf.local"
+# Backup original configs
+type_command "Backing up BIND config files"
 sudo cp /etc/bind/named.conf.options /etc/bind/named.conf.options.bak
 sudo cp /etc/bind/named.conf.local /etc/bind/named.conf.local.bak
 
-# --- Step 3: Configure named.conf.options ---
-type_command "Configuring /etc/bind/named.conf.options"
-sudo bash -c "cat > /etc/bind/named.conf.options <<EOF
+# Configure named.conf.options
+type_command "Configuring named.conf.options"
+sudo tee /etc/bind/named.conf.options > /dev/null <<EOF
 acl MYLAN {
     $ip_addr;
 };
 
 options {
-    directory \"/var/cache/bind\";
+    directory "/var/cache/bind";
     allow-query { $subnet/24; localhost; };
     recursion yes;
 
@@ -53,29 +50,26 @@ options {
     dnssec-validation no;
     listen-on { any; };
 };
-EOF"
+EOF
 
-# --- Step 4: Configure named.conf.local ---
-type_command "Configuring /etc/bind/named.conf.local"
-sudo bash -c "cat > /etc/bind/named.conf.local <<EOF
-zone \"tycs.local\" {
+# Configure named.conf.local
+type_command "Configuring named.conf.local"
+sudo tee /etc/bind/named.conf.local > /dev/null <<EOF
+zone "tycs.local" {
     type master;
-    file \"/etc/bind/db.tycs.local\";
+    file "/etc/bind/db.tycs.local";
 };
 
-zone \"$(echo $subnet | awk -F. '{print $3"."$2"."$1}').in-addr.arpa\" {
+zone "$rev_zone.in-addr.arpa" {
     type master;
-    file \"/etc/bind/db.$(echo $subnet | awk -F. '{print $3"."$2"."$1}').0\";
+    file "/etc/bind/db.$rev_zone.0";
 };
-EOF"
+EOF
 
-# --- Step 5: Create forward zone file ---
-type_command "Creating forward zone file /etc/bind/db.tycs.local"
+# Create forward zone file
+type_command "Creating forward zone file"
 sudo cp /etc/bind/db.local /etc/bind/db.tycs.local
-sudo bash -c "cat > /etc/bind/db.tycs.local <<EOF
-;
-; BIND data file for tycs.local
-;
+sudo tee /etc/bind/db.tycs.local > /dev/null <<EOF
 \$TTL    604800
 @       IN      SOA     ns1.tycs.local. root.tycs.local. (
                         2
@@ -83,20 +77,16 @@ sudo bash -c "cat > /etc/bind/db.tycs.local <<EOF
                         86400
                         2419200
                         604800 )
-;
 @       IN      NS      ns1.tycs.local.
 ns1     IN      A       $ip_addr
 www     IN      A       $ip_addr
 ftp     IN      A       $ip_addr
-EOF"
+EOF
 
-# --- Step 6: Create reverse zone file ---
-type_command "Creating reverse zone file /etc/bind/db.$(echo $subnet | awk -F. '{print $3"."$2"."$1}').0"
-sudo cp /etc/bind/db.127 /etc/bind/db.$(echo $subnet | awk -F. '{print $3"."$2"."$1}').0
-sudo bash -c "cat > /etc/bind/db.$(echo $subnet | awk -F. '{print $3"."$2"."$1}').0 <<EOF
-;
-; BIND reverse data file for tycs.local
-;
+# Create reverse zone file
+type_command "Creating reverse zone file"
+sudo cp /etc/bind/db.127 /etc/bind/db.$rev_zone.0
+sudo tee /etc/bind/db.$rev_zone.0 > /dev/null <<EOF
 \$TTL    604800
 @       IN      SOA     ns1.tycs.local. root.tycs.local. (
                         2
@@ -104,29 +94,25 @@ sudo bash -c "cat > /etc/bind/db.$(echo $subnet | awk -F. '{print $3"."$2"."$1}'
                         86400
                         2419200
                         604800 )
-;
 @       IN      NS      ns1.tycs.local.
 $(echo $ip_addr | awk -F. '{print $4}')      IN      PTR     ns1.tycs.local.
-EOF"
+EOF
 
-# --- Step 7: Check & restart BIND9 ---
-type_command "sudo named-checkconf"
+# Check and restart BIND
+type_command "Checking config"
 sudo named-checkconf
-type_command "sudo named-checkzone tycs.local /etc/bind/db.tycs.local"
 sudo named-checkzone tycs.local /etc/bind/db.tycs.local
-type_command "sudo systemctl restart bind9"
+
+type_command "Restarting BIND9"
 sudo systemctl restart bind9
-type_command "sudo systemctl enable bind9"
 sudo systemctl enable bind9
 
-# --- Step 8: Test DNS ---
-type_command "dig @localhost www.tycs.local"
+# Test DNS
+type_command "Testing forward lookup"
 dig @localhost www.tycs.local
-type_command "dig -x $ip_addr"
+type_command "Testing reverse lookup"
 dig -x $ip_addr
 
-# --- Final message ---
 echo -e "\n${GREEN}✔ Practical 05 completed successfully.${RESET}"
-echo -e "${GREEN}BIND9 DNS Server configured dynamically using detected IP and subnet.${RESET}"
-echo -e "${GREEN}Forward and Reverse Lookup verified.${RESET}"
 echo -e "${GREEN}Hostname: $hostname | IP: $ip_addr | Subnet: $subnet/24${RESET}"
+echo -e "${GREEN}Forward and Reverse Lookup verified.${RESET}"
