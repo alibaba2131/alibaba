@@ -1,24 +1,104 @@
 #!/bin/bash
-sudo apt update -y
-sudo apt install isc-dhcp-server -y
-interface=$(ip -o -4 route show to default | awk '{print $5}')
-ip_addr=$(hostname -I | awk '{print $1}')
-hostname=$(hostname)
-subnet=$(ip -o -4 addr show $interface | awk '{print $4}' | cut -d/ -f1 | awk -F. '{print $1"."$2"."$3".0"}')
-range_start=$(echo $subnet | awk -F. '{print $1"."$2"."$3".10"}')
-range_end=$(echo $subnet | awk -F. '{print $1"."$2"."$3".100"}')
-sudo bash -c "cat > /etc/dhcp/dhcpd.conf" <<EOL
+# TYBSc CS Practical 01 - Install and Configure DHCP Server in Ubuntu 16.04+
+# Author: Atharv Satish Munj
+# Description: Fully automatic DHCP setup with real-looking ubuntu@hostname prompt
+
+set -euo pipefail
+
+# --- Auto-detect system info ---
+HOSTNAME=$(hostname)
+INTERFACE=$(ip route | grep '^default' | awk '{print $5}' | head -n1)
+IP_ADDRESS=$(ip -4 addr show "$INTERFACE" | grep -oP '(?<=inet\s)\d+(\.\d+){3}' | head -n1)
+
+# --- Derive subnet dynamically ---
+IFS='.' read -r o1 o2 o3 o4 <<< "$IP_ADDRESS"
+SUBNET="${o1}.${o2}.${o3}.0"
+ROUTER="${o1}.${o2}.${o3}.1"
+BROADCAST="${o1}.${o2}.${o3}.255"
+
+# --- Color codes for realistic prompt ---
+BOLD_GREEN="\e[1;32m"
+BOLD_BLUE="\e[1;34m"
+RESET="\e[0m"
+
+# --- Function to simulate realistic ubuntu@hostname prompt ---
+run_cmd() {
+    echo -e "${BOLD_GREEN}${HOSTNAME}${RESET}:${BOLD_BLUE}~${RESET}\$ $*"
+    sleep 1
+    "$@"
+    echo ""
+    sleep 1
+}
+
+# --- Start script ---
+clear
+echo "=============================="
+echo "TYBSc CS Practical 01"
+echo "Install and Configure DHCP Server in Ubuntu"
+echo "=============================="
+echo "Detected Hostname : $HOSTNAME"
+echo "Detected Interface: $INTERFACE"
+echo "Detected IP Address: $IP_ADDRESS"
+echo "Calculated Subnet  : $SUBNET"
+echo "=============================="
+sleep 2
+
+# Step 1: Update and upgrade system
+run_cmd sudo apt-get update -y
+run_cmd sudo apt-get upgrade -y
+
+# Step 2: Install DHCP server package
+run_cmd sudo apt-get install isc-dhcp-server -y
+
+# Step 3: Show IP address
+run_cmd ip a
+
+# Step 4: Configure DHCP server (backup + create new)
+echo "Backing up existing dhcpd.conf..."
+sudo cp /etc/dhcp/dhcpd.conf /etc/dhcp/dhcpd.conf.bak 2>/dev/null || true
+
+sudo bash -c "cat > /etc/dhcp/dhcpd.conf <<EOF
+# DHCP Server Configuration File
+option domain-name \"example.local\";
+option domain-name-servers ns1.example.local, ns2.example.local;
+
 default-lease-time 600;
 max-lease-time 7200;
 authoritative;
-subnet $subnet netmask 255.255.255.0 {
-    range $range_start $range_end;
-    option routers $ip_addr;
-    option domain-name-servers 8.8.8.8, 8.8.4.4;
+
+# Subnet dynamically generated based on current IP
+subnet $SUBNET netmask 255.255.255.0 {
+  range ${o1}.${o2}.${o3}.10 ${o1}.${o2}.${o3}.100;
+  option routers $ROUTER;
+  option subnet-mask 255.255.255.0;
+  option broadcast-address $BROADCAST;
+  option domain-name-servers 8.8.8.8, 8.8.4.4;
 }
-EOL
-sudo sed -i "s/INTERFACESv4=\"\"/INTERFACESv4=\"$interface\"/" /etc/default/isc-dhcp-server
-sudo systemctl restart isc-dhcp-server
-sudo systemctl enable isc-dhcp-server
-echo "$hostname $ip_addr"
-echo "DHCP Server installed and configured on interface $interface with range $range_start - $range_end"
+EOF"
+
+# Step 5: Configure interface automatically
+sudo bash -c "cat > /etc/default/isc-dhcp-server <<EOF
+INTERFACESv4=\"$INTERFACE\"
+INTERFACESv6=\"\"
+EOF"
+
+# Step 6: Restart and enable DHCP service
+run_cmd sudo systemctl restart isc-dhcp-server
+run_cmd sudo systemctl enable isc-dhcp-server
+
+# Step 7: Verify service and logs
+run_cmd sudo systemctl status isc-dhcp-server --no-pager
+run_cmd sudo ss -ulnp | grep dhcp || echo "No DHCP process found yet."
+
+echo "Displaying recent DHCP logs..."
+sudo grep -i dhcp /var/log/syslog | tail -n 10 || echo "No DHCP log entries yet."
+
+# Step 8: Summary
+echo ""
+echo "=============================="
+echo "DHCP Server Configuration Completed ✅"
+echo "=============================="
+echo "Hostname : $HOSTNAME"
+echo "Interface: $INTERFACE"
+echo "IP Addr  : $IP_ADDRESS"
+echo "Subnet   : $SUBNET"
