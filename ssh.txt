@@ -1,8 +1,4 @@
-#!/bin/bash
-# -------------------------------------------------
-# TYBSc CS Practical 06
-# Configure SSH Server and Client (Password Authentication)
-# -------------------------------------------------
+
 set -euo pipefail
 
 # --- Colors and dynamic prompt ---
