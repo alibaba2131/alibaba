@@ -1,0 +1,75 @@
+#!/bin/bash
+# -------------------------------------------------
+# TYBSc CS Practical 06
+# Configure SSH Server and Client (Password Authentication)
+# -------------------------------------------------
+set -euo pipefail
+
+# --- Colors and dynamic prompt ---
+GREEN="\e[1;32m"
+BLUE="\e[1;34m"
+RESET="\e[0m"
+HOSTNAME=$(hostname)
+IP_ADDR=$(hostname -I | awk '{print $1}')
+PROMPT="${GREEN}ubuntu@$HOSTNAME${RESET}:${BLUE}~${RESET}\$"
+
+# --- Helper function for clean command display ---
+type_command() {
+    local text="$1"
+    echo -e "${PROMPT} $text"
+    sleep 1
+}
+
+clear
+echo -e "${GREEN}===== TYBSc CS Practical 06: Configure SSH Server & Client =====${RESET}\n"
+
+# --- Step 1: Update & install SSH ---
+type_command "sudo apt update -y"
+sudo apt update -y
+
+type_command "sudo apt install openssh-server openssh-client -y"
+sudo apt install openssh-server openssh-client -y
+
+# --- Step 2: Backup sshd_config ---
+type_command "Backing up /etc/ssh/sshd_config"
+sudo cp /etc/ssh/sshd_config /etc/ssh/sshd_config.bak
+
+# --- Step 3: Enable password authentication & root login ---
+type_command "Configuring /etc/ssh/sshd_config"
+sudo sed -i 's/^#PasswordAuthentication yes/PasswordAuthentication yes/' /etc/ssh/sshd_config
+sudo sed -i 's/^PasswordAuthentication no/PasswordAuthentication yes/' /etc/ssh/sshd_config
+sudo sed -i 's/^#PermitRootLogin prohibit-password/PermitRootLogin yes/' /etc/ssh/sshd_config
+
+# --- Step 4: Enable & start SSH service ---
+type_command "sudo systemctl enable ssh"
+sudo systemctl enable ssh
+
+type_command "sudo systemctl start ssh"
+sudo systemctl start ssh
+
+# --- Step 5: Allow SSH through firewall ---
+if command -v ufw >/dev/null 2>&1; then
+    type_command "sudo ufw allow ssh"
+    sudo ufw allow ssh
+    type_command "sudo ufw reload"
+    sudo ufw reload
+else
+    type_command "Firewall (ufw) not installed — skipping firewall rules."
+fi
+
+# --- Step 6: Display SSH server info ---
+type_command "hostname -I"
+echo -e "${GREEN}Server IP Address: $IP_ADDR${RESET}"
+
+# --- Step 7: Test SSH connection locally ---
+type_command "ssh localhost -o StrictHostKeyChecking=no 'echo SSH connection successful!'"
+ssh localhost -o StrictHostKeyChecking=no "echo SSH connection successful!"
+
+# --- Step 8: Show SSH service status ---
+type_command "sudo systemctl status ssh --no-pager | head -n 10"
+sudo systemctl status ssh --no-pager | head -n 10
+
+# --- Final message ---
+echo -e "\n${GREEN}✔ SSH Server and Client Configuration Completed Successfully.${RESET}"
+echo -e "${GREEN}Connect using: ssh your_username@$IP_ADDR${RESET}"
+echo -e "${GREEN}Password authentication is enabled and verified locally.${RESET}"
