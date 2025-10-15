@@ -1,57 +1,116 @@
 #!/bin/bash
+# -------------------------------------------------
+# TYBSc CS Practical No.04
+# Configure NTP Server (NTPd)
+# Fully automatic with dynamic subnet detection
+# Author: Atharv Satish Munj
+# -------------------------------------------------
 
-GREEN="\e[32m"
+set -euo pipefail
+
+# --- Detect system info ---
+HOSTNAME=$(hostname)
+LOCAL_IP=$(hostname -I | awk '{print $1}')
+INTERFACE=$(ip route | grep '^default' | awk '{print $5}' | head -n1)
+SUBNET=$(echo $LOCAL_IP | awk -F. '{print $1"."$2"."$3".0"}')
+
+# --- Colors & prompt ---
+GREEN="\e[1;32m"
+BLUE="\e[1;34m"
 RESET="\e[0m"
-TYPING_DELAY=0.05
+PROMPT="${GREEN}${HOSTNAME}${RESET}:${BLUE}~${RESET}\$"
 
-type_command() {
-  local text="$1"
-  for ((i=0; i<${#text}; i++)); do
-    echo -n "${text:$i:1}"
-    sleep $TYPING_DELAY
-  done
-  echo
+# --- Function to simulate command display ---
+run_cmd() {
+    echo -e "${PROMPT} $*"
+    sleep 1
+    "$@"
+    echo ""
+    sleep 1
 }
 
-hostname=$(hostname)
-ip_addr=$(hostname -I | awk '{print $1}')
-interface=$(ip -o -4 route show to default | awk '{print $5}')
-subnet=$(ip -o -4 addr show $interface | awk '{print $4}' | cut -d/ -f1 | awk -F. '{print $1"."$2"."$3".0"}')
+clear
+echo -e "${GREEN}===== CONFIGURING NTP SERVER =====${RESET}"
+echo -e "Detected Hostname: ${GREEN}${HOSTNAME}${RESET}"
+echo -e "Detected IP      : ${GREEN}${LOCAL_IP}${RESET}"
+echo -e "Detected Subnet  : ${GREEN}${SUBNET}/24${RESET}\n"
+sleep 2
 
-# Stop systemd-timesyncd
-type_command -e "${GREEN}$hostname${RESET} sudo systemctl stop systemd-timesyncd"
-sudo systemctl stop systemd-timesyncd
+# -------------------------------------------------
+# Step 1: Update system & install NTP
+# -------------------------------------------------
+run_cmd sudo apt update -y
+run_cmd sudo apt install ntp -y
 
-type_command -e "${GREEN}$hostname${RESET} sudo systemctl disable systemd-timesyncd"
-sudo systemctl disable systemd-timesyncd
+# -------------------------------------------------
+# Step 2: Stop & disable conflicting timesyncd
+# -------------------------------------------------
+run_cmd sudo systemctl stop systemd-timesyncd
+run_cmd sudo systemctl disable systemd-timesyncd
+run_cmd sudo systemctl mask systemd-timesyncd
 
-# Update and install NTP
-type_command -e "${GREEN}$hostname${RESET} sudo apt update -y"
-sudo apt update -y
+# -------------------------------------------------
+# Step 3: Backup & configure /etc/ntp.conf
+# -------------------------------------------------
+if [ -f /etc/ntp.conf ]; then
+    run_cmd sudo cp /etc/ntp.conf /etc/ntp.conf.bak
+fi
 
-type_command -e "${GREEN}$hostname${RESET} sudo apt install ntp -y"
-sudo apt install ntp -y
+# Comment out default pool servers
+run_cmd sudo sed -i 's/^pool /#pool /g' /etc/ntp.conf
 
-# Configure NTP
-type_command -e "${GREEN}$hostname${RESET} Configuring NTP server..."
-sudo sed -i 's/^pool /#pool /' /etc/ntp.conf
-sudo bash -c "cat >> /etc/ntp.conf" <<EOL
-server 0.ubuntu.pool.ntp.org iburst
-server 1.ubuntu.pool.ntp.org iburst
-server 2.ubuntu.pool.ntp.org iburst
-server 3.ubuntu.pool.ntp.org iburst
-restrict $subnet mask 255.255.255.0 nomodify notrap
-EOL
+# Append new configuration
+sudo bash -c "cat >> /etc/ntp.conf <<EOF
 
-type_command -e "${GREEN}$hostname${RESET} sudo systemctl restart ntp"
-sudo systemctl restart ntp
+# Local NTP server configuration
+restrict default nomodify notrap nopeer noquery
+restrict 127.0.0.1
+restrict ::1
+restrict ${SUBNET} mask 255.255.255.0 nomodify notrap
 
-type_command -e "${GREEN}$hostname${RESET} sudo systemctl enable ntp"
-sudo systemctl enable ntp
+server 0.in.pool.ntp.org iburst
+server 1.in.pool.ntp.org iburst
+server 2.in.pool.ntp.org iburst
 
-# Set manual date/time
-read -p "Enter new date and time (e.g., '2025-10-15 20:30:00'): " datetime
-type_command -e "${GREEN}$hostname${RESET} sudo date -s '$datetime'"
-sudo date -s "$datetime"
+driftfile /var/lib/ntp/ntp.drift
+EOF"
 
-type_command -e "${GREEN}$hostname${RESET} System date and time updated to $(date)"
+# -------------------------------------------------
+# Step 4: Restart & enable NTP service
+# -------------------------------------------------
+run_cmd sudo systemctl restart ntp
+run_cmd sudo systemctl enable ntp
+
+# -------------------------------------------------
+# Step 5: Verify NTP service
+# -------------------------------------------------
+run_cmd sudo systemctl status ntp --no-pager
+run_cmd ntpq -p
+
+# -------------------------------------------------
+# Step 6: Allow NTP in firewall (if ufw exists)
+# -------------------------------------------------
+if command -v ufw >/dev/null 2>&1; then
+    run_cmd sudo ufw allow ntp
+    run_cmd sudo ufw reload
+else
+    echo -e "${PROMPT} Firewall (ufw) not installed — skipping."
+fi
+
+# -------------------------------------------------
+# Step 7: Optional demo date change (comment if real sync desired)
+# -------------------------------------------------
+# run_cmd sudo date -s "2025-09-15 14:30:00"
+# run_cmd date
+
+# -------------------------------------------------
+# Final Summary
+# -------------------------------------------------
+echo -e "\n${GREEN}======================================================${RESET}"
+echo -e "${GREEN}✔ NTP Server installed and configured successfully.${RESET}"
+echo -e "${GREEN}Hostname : ${HOSTNAME}${RESET}"
+echo -e "${GREEN}IP       : ${LOCAL_IP}${RESET}"
+echo -e "${GREEN}Subnet   : ${SUBNET}/24${RESET}"
+echo -e "${GREEN}Service  : NTP (ntpd) running and enabled at boot${RESET}"
+echo -e "${GREEN}Firewall : NTP port allowed (if ufw active)${RESET}"
+echo -e "${GREEN}======================================================${RESET}\n"
