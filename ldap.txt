@@ -1,0 +1,81 @@
+
+set -euo pipefail
+
+# --- Colors & Prompt ---
+GREEN="\e[1;32m"
+BLUE="\e[1;34m"
+RESET="\e[0m"
+HOSTNAME=$(hostname)
+IP_ADDR=$(hostname -I | awk '{print $1}')
+PROMPT="${GREEN}ubuntu@$HOSTNAME${RESET}:${BLUE}~${RESET}\$"
+
+# --- LDAP Config Variables ---
+LDAP_DOMAIN="example.local"
+LDAP_ORG="TYCS_LDAP"
+LDAP_ADMIN_PASS="Admin@123"
+
+# --- Helper function for commands ---
+run_cmd() {
+    echo -e "${PROMPT} $*"
+    sleep 1
+    eval "$*"
+    echo ""
+    sleep 1
+}
+
+clear
+echo -e "${GREEN}===== INSTALL & CONFIGURE OPENLDAP =====${RESET}\n"
+
+# Step 1: Update system
+run_cmd "sudo apt update -y"
+
+# Step 2: Install OpenLDAP server and client
+run_cmd "sudo apt install slapd ldap-utils -y"
+
+# Step 3: Reconfigure slapd for automated setup
+echo -e "${GREEN}Configuring slapd for domain $LDAP_DOMAIN ...${RESET}"
+sudo DEBIAN_FRONTEND=noninteractive dpkg-reconfigure slapd <<EOF
+$LDAP_DOMAIN
+$LDAP_ADMIN_PASS
+$LDAP_ORG
+Yes
+No
+EOF
+
+# Step 4: Verify LDAP service status
+run_cmd "sudo systemctl status slapd --no-pager | head -n 10"
+
+# Step 5: Backup original LDAP config
+run_cmd "sudo cp -r /etc/ldap /etc/ldap.backup"
+
+# Step 6: Add a base LDIF for organizational units and sample user
+BASE_LDIF="/tmp/base.ldif"
+cat <<EOL > $BASE_LDIF
+dn: ou=People,dc=example,dc=local
+objectClass: organizationalUnit
+ou: People
+
+dn: ou=Groups,dc=example,dc=local
+objectClass: organizationalUnit
+ou: Groups
+
+dn: cn=admin,dc=example,dc=local
+objectClass: organizationalRole
+cn: admin
+description: LDAP administrator
+EOL
+
+run_cmd "sudo ldapadd -x -D cn=admin,dc=example,dc=local -w $LDAP_ADMIN_PASS -f $BASE_LDIF"
+
+# Step 7: Test LDAP query
+run_cmd "ldapsearch -x -LLL -H ldap://$IP_ADDR -b dc=example,dc=local"
+
+# Step 8: Enable slapd to start at boot
+run_cmd "sudo systemctl enable slapd"
+
+# Step 9: Final message
+echo -e "\n${GREEN}✅ OpenLDAP installation and basic configuration completed!${RESET}"
+echo -e "${GREEN}LDAP Server: ldap://$IP_ADDR${RESET}"
+echo -e "${GREEN}Admin DN: cn=admin,dc=example,dc=local${RESET}"
+echo -e "${GREEN}Admin Password: $LDAP_ADMIN_PASS${RESET}"
+echo -e "${GREEN}You can now add users and groups using LDIF files.${RESET}"
