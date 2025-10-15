@@ -1,0 +1,70 @@
+
+set -euo pipefail
+
+# --- Colors & Prompt ---
+GREEN="\e[1;32m"
+BLUE="\e[1;34m"
+RESET="\e[0m"
+HOSTNAME=$(hostname)
+IP_ADDR=$(hostname -I | awk '{print $1}')
+PROMPT="${GREEN}ubuntu@$HOSTNAME${RESET}:${BLUE}~${RESET}\$"
+
+# --- NFS Configuration Variables ---
+NFS_SHARE_DIR="/srv/nfs/share"
+NFS_CLIENT_SUBNET="*"  # Change to specific subnet if needed, e.g., 192.168.0.0/24
+
+# --- Helper function for commands ---
+run_cmd() {
+    echo -e "${PROMPT} $*"
+    sleep 1
+    eval "$*"
+    echo ""
+    sleep 1
+}
+
+clear
+echo -e "${GREEN}===== INSTALL & CONFIGURE NFS SERVER =====${RESET}\n"
+
+# Step 1: Update system
+run_cmd "sudo apt update -y"
+
+# Step 2: Install NFS server
+run_cmd "sudo apt install nfs-kernel-server -y"
+
+# Step 3: Create NFS share directory
+run_cmd "sudo mkdir -p $NFS_SHARE_DIR"
+run_cmd "sudo chmod 777 $NFS_SHARE_DIR"
+
+# Step 4: Backup existing exports file
+run_cmd "sudo cp /etc/exports /etc/exports.backup || true"
+
+# Step 5: Configure NFS exports
+if ! grep -q "$NFS_SHARE_DIR" /etc/exports; then
+    echo "$NFS_SHARE_DIR $NFS_CLIENT_SUBNET(rw,sync,no_subtree_check)" | sudo tee -a /etc/exports
+fi
+
+# Step 6: Apply exports
+run_cmd "sudo exportfs -a"
+
+# Step 7: Restart NFS service
+run_cmd "sudo systemctl restart nfs-kernel-server"
+run_cmd "sudo systemctl enable nfs-kernel-server"
+
+# Step 8: Verify NFS shares
+run_cmd "sudo exportfs -v"
+
+# Step 9: Optional firewall configuration (UFW)
+if command -v ufw >/dev/null 2>&1; then
+    run_cmd "sudo ufw allow from any to any port nfs"
+    run_cmd "sudo ufw reload"
+else
+    echo -e "${GREEN}Firewall (ufw) not installed — skipping.${RESET}"
+fi
+
+# Step 10: Display share info
+echo -e "\n${GREEN}✅ NFS Server setup completed successfully!${RESET}"
+echo -e "${GREEN}Share Directory: $NFS_SHARE_DIR${RESET}"
+echo -e "${GREEN}Accessible to clients on: $NFS_CLIENT_SUBNET${RESET}"
+echo -e "${GREEN}Server IP: $IP_ADDR${RESET}"
+echo -e "${GREEN}You can mount the share on a client using:${RESET}"
+echo -e "${GREEN}sudo mount $IP_ADDR:$NFS_SHARE_DIR /mount/point${RESET}"
