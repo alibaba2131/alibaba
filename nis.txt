@@ -1,0 +1,69 @@
+#!/bin/bash
+set -euo pipefail
+
+GREEN="\e[1;32m"; BLUE="\e[1;34m"; RESET="\e[0m"
+PROMPT="${GREEN}ubuntu@ubuntu${RESET}:${BLUE}~${RESET}\$"
+
+show() { echo -e "${PROMPT} $1"; }
+
+SERVER_HOSTNAME=$(hostname)
+SERVER_IP=$(hostname -I | awk '{print $1}')
+NIS_DOMAIN="localdomain.nis"
+
+clear
+echo -e "${GREEN}===== CONFIGURING NIS SERVER & CLIENT (DEMO MODE) =====${RESET}\n"
+
+### SERVER SETUP ###
+show "sudo apt update -y"
+sudo apt update -y
+
+show "sudo apt install rpcbind nis -y"
+sudo apt install rpcbind nis -y
+
+# Ensure /etc/hosts contains the server's IP and hostname
+grep -q "$SERVER_IP" /etc/hosts || echo "$SERVER_IP $SERVER_HOSTNAME" | sudo tee -a /etc/hosts > /dev/null
+
+show "sudo nisdomainname $NIS_DOMAIN"
+sudo nisdomainname "$NIS_DOMAIN"
+
+echo "NISDOMAIN=$NIS_DOMAIN" | sudo tee /etc/default/nis > /dev/null
+
+sudo sed -i 's/NISSERVER=false/NISSERVER=master/' /etc/default/nis
+
+grep -q "$SERVER_IP" /etc/ypserv.conf || echo "$SERVER_IP:*" | sudo tee -a /etc/ypserv.conf > /dev/null
+
+cd /var/yp && sudo make
+
+show "sudo systemctl restart rpcbind ypserv"
+sudo systemctl restart rpcbind ypserv
+
+### CLIENT SETUP (Same System for Demo) ###
+show "sudo apt install rpcbind nis yp-tools -y"
+sudo apt install rpcbind nis yp-tools -y
+
+grep -q "$SERVER_IP" /etc/hosts || echo "$SERVER_IP $SERVER_HOSTNAME" | sudo tee -a /etc/hosts > /dev/null
+
+sudo nisdomainname "$NIS_DOMAIN"
+echo "NISDOMAIN=$NIS_DOMAIN" | sudo tee /etc/default/nis > /dev/null
+
+grep -q "$NIS_DOMAIN" /etc/yp.conf || echo "domain $NIS_DOMAIN server $SERVER_IP" | sudo tee /etc/yp.conf > /dev/null
+
+sudo sed -i 's/^passwd:.*/passwd:         compat nis/' /etc/nsswitch.conf
+sudo sed -i 's/^group:.*/group:          compat nis/' /etc/nsswitch.conf
+sudo sed -i 's/^shadow:.*/shadow:         compat nis/' /etc/nsswitch.conf
+
+if ! grep -q "pam_mkhomedir.so" /etc/pam.d/common-session; then
+    echo 'session required pam_mkhomedir.so skel=/etc/skel/ umask=0022' | sudo tee -a /etc/pam.d/common-session
+fi
+
+show "sudo systemctl restart rpcbind ypbind"
+sudo systemctl restart rpcbind ypbind
+
+show "sudo systemctl enable rpcbind ypbind"
+sudo systemctl enable rpcbind ypbind
+
+echo -e "\n${GREEN}✔ NIS Server & Client configured successfully.${RESET}"
+echo -e "${GREEN}Hostname: $SERVER_HOSTNAME${RESET}"
+echo -e "${GREEN}IP Address: $SERVER_IP${RESET}"
+echo -e "${GREEN}NIS Domain: $NIS_DOMAIN${RESET}"
+echo -e "${GREEN}Test with: ypwhich | ypcat passwd.byname${RESET}\n"
